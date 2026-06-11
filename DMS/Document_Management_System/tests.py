@@ -1,3 +1,86 @@
-from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APITestCase
 
-# Create your tests here.
+from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfile
+
+
+User = get_user_model()
+
+
+class DocumentPermissionAndSharingTests(APITestCase):
+	def setUp(self):
+		self.admin_user = User.objects.create_user(
+			username='adminuser',
+			email='admin@example.com',
+			password='strongpass123',
+			is_staff=True,
+		)
+		self.admin_profile = AdminProfile.objects.create(user=self.admin_user)
+		self.admin_token = Token.objects.create(user=self.admin_user)
+
+		self.regular_user = User.objects.create_user(
+			username='regularuser',
+			email='regular@example.com',
+			password='strongpass123',
+		)
+		self.regular_profile = UserProfile.objects.create(user=self.regular_user, created_by=self.admin_profile)
+
+		self.recipient_user = User.objects.create_user(
+			username='recipient',
+			email='recipient@example.com',
+			password='strongpass123',
+		)
+		self.recipient_profile = UserProfile.objects.create(user=self.recipient_user, created_by=self.admin_profile)
+		self.recipient_token = Token.objects.create(user=self.recipient_user)
+
+		self.group = UserGroup.objects.create(name='Team A', created_by=self.admin_profile)
+		self.group.members.add(self.recipient_profile)
+
+	def test_admin_can_assign_document_permissions_to_user(self):
+		self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+		response = self.client.post(
+			reverse('auth-assign-document-permissions'),
+			{
+				'user_id': self.regular_user.pk,
+				'permissions': ['view_document', 'add_document', 'share_document'],
+			},
+			format='json',
+		)
+
+		self.assertEqual(response.status_code, 200)
+		assigned = set(
+			self.regular_user.user_permissions.filter(content_type__model='document').values_list('codename', flat=True)
+		)
+		self.assertEqual(assigned, {'view_document', 'add_document', 'share_document'})
+
+	def test_shared_document_is_visible_to_recipient(self):
+		view_permission = Permission.objects.get(codename='view_document', content_type__model='document')
+		share_permission = Permission.objects.get(codename='share_document', content_type__model='document')
+		self.regular_user.user_permissions.add(view_permission, share_permission)
+		self.recipient_user.user_permissions.add(view_permission)
+		regular_token = Token.objects.create(user=self.regular_user)
+
+		document = Document.objects.create(
+			title='Policy',
+			file=SimpleUploadedFile('policy.txt', b'policy body'),
+			uploaded_by=self.regular_profile,
+		)
+
+		self.client.credentials(HTTP_AUTHORIZATION=f'Token {regular_token.key}')
+		share_response = self.client.post(
+			reverse('document-share', args=[document.pk]),
+			{'shared_with_group': self.group.pk},
+			format='json',
+		)
+		self.assertIn(share_response.status_code, {200, 201})
+		self.assertTrue(DocumentShare.objects.filter(document=document, shared_with_group=self.group).exists())
+
+		self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.recipient_token.key}')
+		list_response = self.client.get(reverse('document-list'))
+		self.assertEqual(list_response.status_code, 200)
+		self.assertEqual(len(list_response.data), 1)
+		self.assertEqual(list_response.data[0]['id'], document.pk)

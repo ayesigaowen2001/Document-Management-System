@@ -1,3 +1,7 @@
+# This file defines the data models for the Document Management System (DMS) application. 
+# It includes models for admin profiles, user profiles, user groups, and documents. 
+# Each model has fields that capture relevant information and relationships between them. 
+# The AdminProfile model includes methods for creating users and groups, as well as adding users to groups, with appropriate permission checks to ensure only authorized actions are allowed.
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
@@ -5,7 +9,6 @@ from django.db import models
 
 
 User = get_user_model()
-
 
 class AdminProfile(models.Model):
 	user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='admin_profile')
@@ -19,12 +22,12 @@ class AdminProfile(models.Model):
 			raise PermissionDenied('Only staff/superusers can be admin profiles.')
 		super().save(*args, **kwargs)
 
-	def create_user(self, username, email=None, password=None, **extra_fields):
+	def create_user(self, username, email=None, password=None):
 		user = User.objects.create_user(
 			username=username,
 			email=email,
 			password=password,
-			**extra_fields,
+			#**extra_fields,
 		)
 		return UserProfile.objects.create(user=user, created_by=self)
 
@@ -87,6 +90,63 @@ class Document(models.Model):
 
 	class Meta:
 		ordering = ['-uploaded_at']
+		permissions = [
+			('share_document', 'Can share document'),
+		]
 
 	def __str__(self):
 		return self.title
+
+
+class DocumentShare(models.Model):
+	document = models.ForeignKey(
+		Document,
+		on_delete=models.CASCADE,
+		related_name='shares',
+	)
+	shared_by = models.ForeignKey(
+		UserProfile,
+		on_delete=models.CASCADE,
+		related_name='shared_documents',
+	)
+	shared_with_user = models.ForeignKey(
+		UserProfile,
+		on_delete=models.CASCADE,
+		null=True,
+		blank=True,
+		related_name='received_document_shares',
+	)
+	shared_with_group = models.ForeignKey(
+		UserGroup,
+		on_delete=models.CASCADE,
+		null=True,
+		blank=True,
+		related_name='received_document_shares',
+	)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		constraints = [
+			models.CheckConstraint(
+				condition=(
+					(models.Q(shared_with_user__isnull=False) & models.Q(shared_with_group__isnull=True))
+					| (models.Q(shared_with_user__isnull=True) & models.Q(shared_with_group__isnull=False))
+				),
+				name='document_share_single_target',
+			),
+			models.UniqueConstraint(
+				fields=['document', 'shared_with_user'],
+				condition=models.Q(shared_with_user__isnull=False),
+				name='unique_document_share_user',
+			),
+			models.UniqueConstraint(
+				fields=['document', 'shared_with_group'],
+				condition=models.Q(shared_with_group__isnull=False),
+				name='unique_document_share_group',
+			),
+		]
+		ordering = ['-created_at']
+
+	def __str__(self):
+		target = self.shared_with_user or self.shared_with_group
+		return f'{self.document} -> {target}'

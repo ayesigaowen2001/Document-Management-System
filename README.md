@@ -31,6 +31,15 @@ Defined in DMS/Document_Management_System/models.py:
   - uploaded_by: foreign key to UserProfile
   - group: optional foreign key to UserGroup
   - uploaded_at
+  - custom permission: share_document
+
+- DocumentShare
+  - document: foreign key to Document
+  - shared_by: foreign key to UserProfile
+  - shared_with_user: optional foreign key to UserProfile
+  - shared_with_group: optional foreign key to UserGroup
+  - created_at
+  - exactly one target is allowed per share record
 
 ## 2) Authentication
 
@@ -68,12 +77,17 @@ Most API views also explicitly set TokenAuthentication.
   - IsAdminUser
 
 - DocumentViewSet
-  - IsAuthenticated
+  - custom DocumentAccessPermission
+  - superusers/admins can access all documents
+  - regular users need explicit document permissions and only see documents they uploaded or that were shared to them directly or through a group
 
 - SuperuserCreateAdminView
   - IsAuthenticated + runtime check request.user.is_superuser
 
 - CreateUserView
+  - IsAuthenticated + runtime check user is superuser OR has admin_profile
+
+- AssignDocumentPermissionsView
   - IsAuthenticated + runtime check user is superuser OR has admin_profile
 
 ## 4) API Endpoints
@@ -94,7 +108,7 @@ Project root routing:
 }
 ```
 
-  - response:
+- response:
 
 ```json
 {
@@ -122,8 +136,8 @@ Project root routing:
 }
 ```
 
-  - creates Django user with is_staff=True
-  - creates AdminProfile for that user
+- creates Django user with is_staff=True
+- creates AdminProfile for that user
 
 - POST /api/auth/create-user/
   - requires token header
@@ -138,9 +152,29 @@ Project root routing:
 }
 ```
 
-  - creates Django auth user
-  - creates UserProfile
-  - created_by is set from request.user.admin_profile when available (otherwise null)
+- creates Django auth user
+- creates UserProfile
+- created_by is set from request.user.admin_profile when available (otherwise null)
+
+- POST /api/auth/assign-document-permissions/
+  - requires token header
+  - allowed for superuser or admin (user with admin_profile)
+  - body:
+
+```json
+{
+  "user_id": 2,
+  "permissions": ["view_document", "add_document", "share_document"]
+}
+```
+
+- replaces the target user's current document permissions with the supplied list
+- allowed codenames:
+  - view_document
+  - add_document
+  - change_document
+  - delete_document
+  - share_document
 
 ### Resource endpoints (DRF router)
 
@@ -148,6 +182,29 @@ Project root routing:
 - /api/user-profiles/
 - /api/groups/
 - /api/documents/
+
+### Custom document action
+
+- POST /api/documents/{id}/share/
+  - requires token header
+  - requester must have share_document permission unless they are admin/superuser
+  - body for direct user share:
+
+```json
+{
+  "shared_with_user": 3
+}
+```
+
+- body for group share:
+
+```json
+{
+  "shared_with_group": 1
+}
+```
+
+- exactly one of shared_with_user or shared_with_group must be provided
 
 ### Custom group action
 
@@ -170,6 +227,8 @@ Defined in DMS/Document_Management_System/serializers.py:
 - UserGroupSerializer
 - UserGroupAddMemberSerializer
 - DocumentSerializer
+- DocumentShareSerializer
+- DocumentPermissionAssignmentSerializer
 - AccountCreateSerializer
 
 ## 6) Admin Site
@@ -180,6 +239,7 @@ Models are registered in DMS/Document_Management_System/admin.py:
 - UserProfile
 - UserGroup
 - Document
+- DocumentShare
 
 ## 7) Environment Configuration
 
@@ -210,3 +270,13 @@ python manage.py runserver
 ## 9) Notes on document upload
 
 Document.file is a FileField, so create/update document requests should be sent as multipart/form-data when uploading a real file.
+
+For regular users, document actions are permission-based:
+
+- upload requires add_document
+- view requires view_document
+- update requires change_document
+- delete requires delete_document
+- share requires share_document
+
+Even with permissions, regular users only operate on their own documents for write actions. Shared documents become visible for reading, but recipients do not automatically gain update, delete, or re-share authority over another user's document.
