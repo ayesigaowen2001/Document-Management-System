@@ -1,23 +1,23 @@
 """
-URL configuration for DMS project.
+URL configuration for the DMS project (root level).
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.0/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+This module defines the top-level URL patterns for the entire Document
+Management System.  It delegates all API-related routes to the
+Document_Management_System app's own `urls.py` module, keeping the
+project-level configuration minimal.
+
+Routes
+------
+- /admin/       → Django's built-in admin interface.
+- /api/         → All DMS REST API endpoints (included from the app's urls.py).
 """
 from django.contrib import admin
 from django.urls import include, path
 
 urlpatterns = [
+    # Django admin site – accessible only to users with is_staff=True.
     path('admin/', admin.site.urls),
+
+    # All custom REST API routes for the DMS (login, users, documents, etc.).
     path('api/', include('DMS.Document_Management_System.urls')),
 ]

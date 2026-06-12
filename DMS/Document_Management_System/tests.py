@@ -1,9 +1,12 @@
+from typing import cast
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from rest_framework.response import Response
+from rest_framework.test import APITestCase, APIClient
 
 from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfile
 
@@ -13,6 +16,8 @@ User = get_user_model()
 
 class DocumentPermissionAndSharingTests(APITestCase):
 	def setUp(self):
+		self.api_client = cast(APIClient, self.client)
+
 		self.admin_user = User.objects.create_user(
 			username='adminuser',
 			email='admin@example.com',
@@ -41,15 +46,15 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		self.group.members.add(self.recipient_profile)
 
 	def test_admin_can_assign_document_permissions_to_user(self):
-		self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
-		response = self.client.post(
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+		response = cast(Response, self.api_client.post(
 			reverse('auth-assign-document-permissions'),
 			{
 				'user_id': self.regular_user.pk,
 				'permissions': ['view_document', 'add_document', 'share_document'],
 			},
 			format='json',
-		)
+		))
 
 		self.assertEqual(response.status_code, 200)
 		assigned = set(
@@ -70,17 +75,18 @@ class DocumentPermissionAndSharingTests(APITestCase):
 			uploaded_by=self.regular_profile,
 		)
 
-		self.client.credentials(HTTP_AUTHORIZATION=f'Token {regular_token.key}')
-		share_response = self.client.post(
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {regular_token.key}')
+		share_response = cast(Response, self.api_client.post(
 			reverse('document-share', args=[document.pk]),
 			{'shared_with_group': self.group.pk},
 			format='json',
-		)
+		))
 		self.assertIn(share_response.status_code, {200, 201})
 		self.assertTrue(DocumentShare.objects.filter(document=document, shared_with_group=self.group).exists())
 
-		self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.recipient_token.key}')
-		list_response = self.client.get(reverse('document-list'))
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.recipient_token.key}')
+		list_response = cast(Response, self.api_client.get(reverse('document-list')))
+		response_data = cast(list[dict[str, object]], list_response.data)
 		self.assertEqual(list_response.status_code, 200)
-		self.assertEqual(len(list_response.data), 1)
-		self.assertEqual(list_response.data[0]['id'], document.pk)
+		self.assertEqual(len(response_data), 1)
+		self.assertEqual(response_data[0]['id'], document.pk)
