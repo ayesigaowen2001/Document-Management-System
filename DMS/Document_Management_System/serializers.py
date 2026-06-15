@@ -6,6 +6,7 @@
 # Serializers are categorised as follows:
 #
 # Model serializers (directly mirror database models):
+#   - AuthUserSerializer         → auth.User (built-in Django auth user)
 #   - AdminProfileSerializer      → AdminProfile
 #   - UserProfileSerializer       → UserProfile
 #   - UserGroupSerializer         → UserGroup
@@ -41,6 +42,53 @@ DOCUMENT_PERMISSION_CHOICES = [
 # ---------------------------------------------------------------------------
 # Model serializers
 # ---------------------------------------------------------------------------
+
+class AuthUserSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Django's built-in auth.User model (auth_users table).
+
+    Handles password hashing on create/update. The password field is
+    write-only and excluded from all responses.
+    """
+    password = serializers.CharField(write_only=True, min_length=8, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'email',
+            'password',
+            'first_name',
+            'last_name',
+            'is_staff',
+            'is_superuser',
+            'is_active',
+            'date_joined',
+            'last_login',
+        ]
+        read_only_fields = ['id', 'date_joined', 'last_login']
+        extra_kwargs = {
+            'password': {'write_only': True},
+        }
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = User(**validated_data)
+        if password:
+            user.set_password(password)
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+
 
 class AdminProfileSerializer(serializers.ModelSerializer):
     """Serializer for the AdminProfile model (admin users)."""
@@ -78,9 +126,21 @@ class DocumentShareSerializer(serializers.ModelSerializer):
     """
     Serializer for the DocumentShare model.
 
-    Validates that exactly one of `shared_with_user` or `shared_with_group`
-    is provided (enforced in validate()).
+    **Input** (write-only):
+      - ``email``       – Email address of the UserProfile to share with.
+      - ``group_name``  – Name of the UserGroup to share with.
+
+    Exactly one of ``email`` or ``group_name`` must be supplied.  The
+    serializer resolves the given identifier to the corresponding model
+    instance internally, so callers never need to know database primary keys.
+
+    **Output** (read-only):
+      Returns the standard DocumentShare representation including the
+      ``shared_with_user`` (pk) and ``shared_with_group`` (pk) fields.
     """
+    email = serializers.EmailField(write_only=True, required=False)
+    group_name = serializers.CharField(write_only=True, required=False)
+
     class Meta:
         model = DocumentShare
         fields = [
@@ -89,19 +149,43 @@ class DocumentShareSerializer(serializers.ModelSerializer):
             'shared_by',
             'shared_with_user',
             'shared_with_group',
+            'email',
+            'group_name',
             'created_at',
         ]
-        read_only_fields = ['id', 'document', 'shared_by', 'created_at']
+        read_only_fields = ['id', 'document', 'shared_by', 'shared_with_user', 'shared_with_group', 'created_at']
 
     def validate(self, attrs):
         """
-        Ensure that exactly one of shared_with_user / shared_with_group is set.
-        """
-        shared_with_user = attrs.get('shared_with_user')
-        shared_with_group = attrs.get('shared_with_group')
+        Ensure exactly one of ``email`` or ``group_name`` is provided,
+        then resolve it to the appropriate model instance.
 
-        if bool(shared_with_user) == bool(shared_with_group):
-            raise serializers.ValidationError('Provide either shared_with_user or shared_with_group.')
+        On success, the validated data will contain either a
+        ``shared_with_user`` (UserProfile) or ``shared_with_group`` (UserGroup)
+        key so that callers can directly use it with ``get_or_create``.
+        """
+        email = attrs.pop('email', None)
+        group_name = attrs.pop('group_name', None)
+
+        if bool(email) == bool(group_name):
+            raise serializers.ValidationError('Provide either email or group_name (not both, not neither).')
+
+        if email:
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise serializers.ValidationError(f"No user found with email '{email}'.")
+
+            user_profile = getattr(user, 'user_profile', None)
+            if user_profile is None:
+                raise serializers.ValidationError(f"User with email '{email}' does not have a user profile.")
+            attrs['shared_with_user'] = user_profile
+        else:
+            try:
+                group = UserGroup.objects.get(name=group_name)
+            except UserGroup.DoesNotExist:
+                raise serializers.ValidationError(f"No group found with name '{group_name}'.")
+            attrs['shared_with_group'] = group
 
         return attrs
 
@@ -113,26 +197,54 @@ class DocumentShareSerializer(serializers.ModelSerializer):
 class UserGroupAddMemberSerializer(serializers.Serializer):
     """
     Validates the payload for adding a user to a group.
-    Accepts a single `user_profile_id` (PK of the UserProfile to add).
+    Accepts an `email` address of the user to add (looked up via the auth User model).
     """
-    user_profile_id = serializers.PrimaryKeyRelatedField(
-        queryset=UserProfile.objects.all(),
-        source='user_profile',
-    )
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        """
+        Look up the User by email, then find their UserProfile.
+        Raise a validation error if not found.
+        """
+        try:
+            user = User.objects.get(email=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(f"No user found with email '{value}'.")
+
+        user_profile = getattr(user, 'user_profile', None)
+        if user_profile is None:
+            raise serializers.ValidationError(f"User with email '{value}' does not have a user profile.")
+
+        return user_profile
 
 
 class DocumentPermissionAssignmentSerializer(serializers.Serializer):
     """
     Validates the payload for assigning document permissions to a user.
     Accepts:
-      - user_id      : PK of the target User
+      - email        : email of the target User
       - permissions  : non-empty list of permission codenames
     """
-    user_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source='user')
+    email = serializers.EmailField()
     permissions = serializers.ListField(
         child=serializers.ChoiceField(choices=DOCUMENT_PERMISSION_CHOICES),
         allow_empty=False,
     )
+
+    def validate_email(self, value):
+        """
+        Look up the User by email. Raise a validation error if not found
+        or if the user is staff/superuser.
+        """
+        try:
+            user = User.objects.get(email=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(f"No user found with email '{value}'.")
+
+        if user.is_staff or user.is_superuser:
+            raise serializers.ValidationError('Permissions can only be assigned to regular users.')
+
+        return user
 
 
 class UserUpdateSerializer(serializers.Serializer):

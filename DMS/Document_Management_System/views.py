@@ -5,6 +5,7 @@
 # application. It provides the following categories of endpoints:
 #
 # 1. ViewSets (CRUD operations):
+#    - AuthUserViewSet      – Manage auth.User records (superusers/admins only)
 #    - AdminProfileViewSet  – Manage admin profiles (superuser-only)
 #    - UserProfileViewSet   – Manage user profiles   (superuser-only)
 #    - UserGroupViewSet     – Manage user groups     (superuser-only)
@@ -27,7 +28,8 @@
 # class that enforces fine-grained view/add/change/delete/share rights.
 # =============================================================================
 
-from django.contrib.auth import get_user_model, update_session_auth_hash
+from django.contrib.auth import get_user_model
+from django.contrib.auth import login as django_login, logout as django_logout
 from django.contrib.auth.models import Permission
 from django.db import transaction
 from django.db.models import Q
@@ -48,6 +50,7 @@ from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfil
 from .serializers import (
 	AccountCreateSerializer,
 	AdminProfileSerializer,
+	AuthUserSerializer,
 	DocumentSerializer,
 	DocumentShareSerializer,
 	UserGroupAddMemberSerializer,
@@ -182,14 +185,72 @@ class AdminProfileViewSet(viewsets.ModelViewSet):
 	"""
 	ViewSet for managing AdminProfile records.
 	- Only accessible to Django admin users (is_staff=True / is_superuser).
-	- Uses TokenAuthentication.
 	- Provides the standard set of list / create / retrieve / update / destroy
 	  actions automatically via ModelViewSet.
 	"""
 	queryset = AdminProfile.objects.select_related('user').all()
 	serializer_class = AdminProfileSerializer
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAdminUser]
+
+
+class AuthUserViewSet(viewsets.ModelViewSet):
+	"""
+	ViewSet for performing CRUD operations directly on Django's built-in
+	auth.User model (the ``auth_users`` database table).
+
+	Available endpoints (all require TokenAuthentication):
+	  - GET    /api/auth-users/        → list all auth users
+	  - GET    /api/auth-users/{pk}/   → retrieve a single auth user
+	  - POST   /api/auth-users/        → create a new auth user
+	  - PUT    /api/auth-users/{pk}/   → fully update an auth user
+	  - PATCH  /api/auth-users/{pk}/   → partially update an auth user
+	  - DELETE /api/auth-users/{pk}/   → delete an auth user
+
+	Only accessible to superusers and admin actors (users with an AdminProfile).
+	Password is automatically hashed via AuthUserSerializer.
+	"""
+	queryset = User.objects.all()
+	serializer_class = AuthUserSerializer
+	permission_classes = [IsAuthenticated]
+
+	def list(self, request, *args, **kwargs):
+		"""GET /api/auth-users/ — list all auth users (superusers/admins only)."""
+		if not is_admin_actor(request.user):
+			return Response({'detail': 'Only superusers and admins can list users.'}, status=status.HTTP_403_FORBIDDEN)
+		return super().list(request, *args, **kwargs)
+
+	def retrieve(self, request, *args, **kwargs):
+		"""GET /api/auth-users/{pk}/ — retrieve a single auth user (superusers/admins only)."""
+		if not is_admin_actor(request.user):
+			return Response({'detail': 'Only superusers and admins can view user details.'}, status=status.HTTP_403_FORBIDDEN)
+		return super().retrieve(request, *args, **kwargs)
+
+	def create(self, request, *args, **kwargs):
+		"""POST /api/auth-users/ — create a new auth user (superusers/admins only)."""
+		if not is_admin_actor(request.user):
+			return Response({'detail': 'Only superusers and admins can create users.'}, status=status.HTTP_403_FORBIDDEN)
+		return super().create(request, *args, **kwargs)
+
+	@transaction.atomic
+	def update(self, request, *args, **kwargs):
+		"""PUT /api/auth-users/{pk}/ — fully update an auth user (superusers/admins only)."""
+		if not is_admin_actor(request.user):
+			return Response({'detail': 'Only superusers and admins can update users.'}, status=status.HTTP_403_FORBIDDEN)
+		return super().update(request, *args, **kwargs)
+
+	@transaction.atomic
+	def partial_update(self, request, *args, **kwargs):
+		"""PATCH /api/auth-users/{pk}/ — partially update an auth user (superusers/admins only)."""
+		if not is_admin_actor(request.user):
+			return Response({'detail': 'Only superusers and admins can update users.'}, status=status.HTTP_403_FORBIDDEN)
+		return super().partial_update(request, *args, **kwargs)
+
+	@transaction.atomic
+	def destroy(self, request, *args, **kwargs):
+		"""DELETE /api/auth-users/{pk}/ — delete an auth user (superusers/admins only)."""
+		if not is_admin_actor(request.user):
+			return Response({'detail': 'Only superusers and admins can delete users.'}, status=status.HTTP_403_FORBIDDEN)
+		return super().destroy(request, *args, **kwargs)
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -200,7 +261,6 @@ class UserProfileViewSet(viewsets.ModelViewSet):
 	"""
 	queryset = UserProfile.objects.select_related('user', 'created_by').all()
 	serializer_class = UserProfileSerializer
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAdminUser]
 
 
@@ -215,20 +275,19 @@ class UserGroupViewSet(viewsets.ModelViewSet):
 	"""
 	queryset = UserGroup.objects.select_related('created_by').prefetch_related('members').all()
 	serializer_class = UserGroupSerializer
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAdminUser]
 
 	@action(detail=True, methods=['post'], url_path='add-member')
 	def add_member(self, request, pk=None):
 		"""
 		POST /user-groups/{id}/add-member/
-		Add a single UserProfile (supplied in the request body) to the group.
+		Add a single user (supplied by email in the request body) to the group.
 		"""
 		serializer = UserGroupAddMemberSerializer(data=request.data)
 		serializer.is_valid(raise_exception=True)
 
 		group = self.get_object()
-		user_profile = serializer.validated_data['user_profile']
+		user_profile = serializer.validated_data['email']
 		group.members.add(user_profile)
 		return Response(
 			{'detail': 'User added to group successfully.'},
@@ -248,7 +307,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
 	"""
 	queryset = Document.objects.select_related('uploaded_by', 'group').prefetch_related('shares').all()
 	serializer_class = DocumentSerializer
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [DocumentAccessPermission]
 
 	def get_queryset(self):
@@ -339,9 +397,16 @@ class DocumentViewSet(viewsets.ModelViewSet):
 class AuthTokenLoginView(ObtainAuthToken):
 	"""
 	POST /api/auth/login/
-	Login view that accepts username and password and returns an auth token.
+	Login view that accepts username and password and returns an auth token
+	AND establishes a Django session for session-based authentication.
+
 	Uses DRF's ObtainAuthToken under the hood but overrides `post` to return
-	a more structured response (token + user_id + username).
+	a more structured response (token + session_id + user_id + username).
+
+	Supports two authentication modes:
+	  1. Token-based:  Use "Authorization: Token <token>" in request headers.
+	  2. Session-based: Use the returned session cookie (CSRF token required
+		 for unsafe methods).
 
 	Accessible without authentication (AllowAny).
 	"""
@@ -356,10 +421,17 @@ class AuthTokenLoginView(ObtainAuthToken):
 		user = validated_data.get('user')
 		if user is None:
 			return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
+
+		# --- Create / retrieve the DRF auth token (for token-based auth) ---
 		token, _ = Token.objects.get_or_create(user=user)
+
+		# --- Establish a Django session (for session-based auth) ---
+		django_login(request, user)
+
 		return Response(
 			{
 				'token': token.key,
+				'session_id': request.session.session_key,
 				'user_id': user.pk,
 				'username': user.get_username(),
 			}
@@ -369,16 +441,17 @@ class AuthTokenLoginView(ObtainAuthToken):
 class AuthTokenLogoutView(APIView):
 	"""
 	POST /api/auth/logout/
-	Logout view that deletes the user's auth token, effectively invalidating
-	the session.
+	Logout view that deletes the user's auth token and flushes the Django
+	session, effectively invalidating both token-based and session-based
+	authentication.
 
-	Requires a valid token (IsAuthenticated).
+	Works with both SessionAuthentication and TokenAuthentication.
 	"""
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAuthenticated]
 
 	def post(self, request):
 		Token.objects.filter(user=request.user).delete()
+		django_logout(request)
 		return Response({'detail': 'Logged out successfully.'}, status=status.HTTP_200_OK)
 
 
@@ -390,7 +463,7 @@ class SuperuserCreateAdminView(APIView):
 	"""
 	Superuser-only CRUD view for managing Admin accounts.
 
-	Available endpoints (all require TokenAuthentication):
+	Available endpoints:
 	  - GET    /api/admins/          → list all admin profiles
 	  - GET    /api/admins/{pk}/     → retrieve a single admin profile
 	  - POST   /api/admins/          → create a new admin (Django staff user)
@@ -399,7 +472,6 @@ class SuperuserCreateAdminView(APIView):
 	All operations are restricted to superusers.  When creating an admin, the
 	view creates both a Django User (is_staff=True) and an AdminProfile record.
 	"""
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAuthenticated]
 
 	def get(self, request, pk=None):
@@ -525,7 +597,7 @@ class CreateUserView(APIView):
 	"""
 	Admin/Superuser view for managing regular User accounts.
 
-	Available endpoints (all require TokenAuthentication):
+	Available endpoints:
 	  - GET    /api/users/          → list all user profiles
 	  - GET    /api/users/{pk}/     → retrieve a single user profile
 	  - POST   /api/users/          → create a new regular user
@@ -535,7 +607,6 @@ class CreateUserView(APIView):
 	When creating a user, the view creates both a Django User and a UserProfile,
 	optionally recording the admin who created it.
 	"""
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAuthenticated]
 
 	def get(self, request, pk=None):
@@ -676,26 +747,27 @@ class AssignDocumentPermissionsView(APIView):
 	"""
 	View for assigning and updating document-level permissions on regular users.
 
-	Available endpoints (all require TokenAuthentication):
+	Available endpoints:
 	  - GET    /api/permissions/            → list all document permissions
-	  - GET    /api/permissions/{user_id}/  → list perms for a specific user
+	  - GET    /api/permissions/?email=…    → list perms for a specific user (by email)
 	  - POST   /api/permissions/            → assign (overwrite) perms for a user
-	  - PATCH  /api/permissions/{user_id}/  → update  (overwrite) perms for a user
+	  - PATCH  /api/permissions/            → update  (overwrite) perms for a user
 
 	All operations are restricted to admin actors.
 	Permissions can only be assigned to regular (non-staff, non-superuser) users.
 	On each POST/PATCH, the user's existing document permissions are cleared and
 	replaced with the requested set.
 	"""
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAuthenticated]
 
 	def get(self, request, user_id=None):
 		"""
-		GET /api/permissions/  or  GET /api/permissions/{user_id}/
-		If user_id is provided, returns the list of document permissions with
-		an `assigned` flag indicating which ones the user currently has.
-		Otherwise, returns all document-level permission definitions.
+		GET /api/permissions/  or  GET /api/permissions/?email=user@example.com
+
+		If an email query parameter is provided, returns the list of document
+		permissions with an `assigned` flag indicating which ones the user
+		currently has.  Otherwise, returns all document-level permission
+		definitions.
 		"""
 		if not is_admin_actor(request.user):
 			return Response(
@@ -708,8 +780,10 @@ class AssignDocumentPermissionsView(APIView):
 			content_type__model=DOCUMENT_PERMISSION_MODEL,
 		)
 
-		if user_id is not None:
-			target_user = get_object_or_404(User, pk=user_id)
+		# Support looking up permissions by email (query param) instead of user_id (URL param)
+		email = request.query_params.get('email')
+		if email is not None:
+			target_user = get_object_or_404(User, email=email)
 			user_permissions = target_user.user_permissions.filter(
 				content_type__app_label=DOCUMENT_PERMISSION_APP_LABEL,
 				content_type__model=DOCUMENT_PERMISSION_MODEL,
@@ -718,8 +792,9 @@ class AssignDocumentPermissionsView(APIView):
 
 			return Response(
 				{
-					'user_id': target_user.pk,
+					'email': target_user.email,
 					'username': target_user.get_username(),
+					'user_id': target_user.pk,
 					'permissions': [
 						{
 							'id': perm.pk,
@@ -749,7 +824,7 @@ class AssignDocumentPermissionsView(APIView):
 		"""
 		POST /api/permissions/
 		Assign (overwrite) document permissions for a user.
-		Accepts a user reference and a list of permission codenames.
+		Accepts an email address and a list of permission codenames.
 		Clears all existing document permissions for the user first,
 		then assigns only the requested ones.
 		"""
@@ -765,13 +840,11 @@ class AssignDocumentPermissionsView(APIView):
 		if not isinstance(validated_data, dict):
 			return Response({'detail': 'Invalid payload.'}, status=status.HTTP_400_BAD_REQUEST)
 
-		target_user = validated_data.get('user')
+		# validated_data['email'] is a User object (returned by validate_email)
+		target_user = validated_data.get('email')
 		permissions = validated_data.get('permissions')
 		if target_user is None or not isinstance(permissions, list):
 			return Response({'detail': 'Invalid payload.'}, status=status.HTTP_400_BAD_REQUEST)
-
-		if target_user.is_staff or target_user.is_superuser:
-			return Response({'detail': 'Permissions can only be assigned to regular users.'}, status=status.HTTP_400_BAD_REQUEST)
 
 		document_permissions = Permission.objects.filter(
 			content_type__app_label=DOCUMENT_PERMISSION_APP_LABEL,
@@ -785,6 +858,7 @@ class AssignDocumentPermissionsView(APIView):
 		return Response(
 			{
 				'detail': 'Document permissions assigned successfully.',
+				'email': target_user.email,
 				'user_id': target_user.pk,
 				'permissions': [permission.codename for permission in selected_permissions],
 			},
@@ -792,12 +866,12 @@ class AssignDocumentPermissionsView(APIView):
 		)
 
 	@transaction.atomic
-	def patch(self, request, user_id=None):
+	def patch(self, request):
 		"""
-		PATCH /api/permissions/{user_id}/
-		Update (overwrite) document permissions for a user identified by URL.
-		Accepts a list of permission codenames.
-		Clears all existing document permissions for the user first,
+		PATCH /api/permissions/
+		Update (overwrite) document permissions for a user identified by email
+		in the request body.  Accepts an email address and a list of permission
+		codenames.  Clears all existing document permissions for the user first,
 		then assigns only the requested ones.
 		"""
 		if not is_admin_actor(request.user):
@@ -806,22 +880,16 @@ class AssignDocumentPermissionsView(APIView):
 				status=status.HTTP_403_FORBIDDEN,
 			)
 
-		if user_id is None:
-			return Response({'detail': 'User ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-		target_user = get_object_or_404(User, pk=user_id)
-
-		if target_user.is_staff or target_user.is_superuser:
-			return Response({'detail': 'Permissions can only be assigned to regular users.'}, status=status.HTTP_400_BAD_REQUEST)
-
 		serializer = DocumentPermissionAssignmentSerializer(data=request.data)
 		serializer.is_valid(raise_exception=True)
 		validated_data = serializer.validated_data
 		if not isinstance(validated_data, dict):
 			return Response({'detail': 'Invalid payload.'}, status=status.HTTP_400_BAD_REQUEST)
 
+		# validated_data['email'] is a User object (returned by validate_email)
+		target_user = validated_data.get('email')
 		permissions = validated_data.get('permissions')
-		if not isinstance(permissions, list):
+		if target_user is None or not isinstance(permissions, list):
 			return Response({'detail': 'Invalid payload.'}, status=status.HTTP_400_BAD_REQUEST)
 
 		document_permissions = Permission.objects.filter(
@@ -836,6 +904,7 @@ class AssignDocumentPermissionsView(APIView):
 		return Response(
 			{
 				'detail': 'Document permissions updated successfully.',
+				'email': target_user.email,
 				'user_id': target_user.pk,
 				'permissions': [permission.codename for permission in selected_permissions],
 			},
@@ -851,7 +920,6 @@ class DocumentPermissionListView(APIView):
 
 	Restricted to admin actors (superusers / staff / AdminProfile holders).
 	"""
-	authentication_classes = [TokenAuthentication]
 	permission_classes = [IsAuthenticated]
 
 	def get(self, request):

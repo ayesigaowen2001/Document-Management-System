@@ -7,6 +7,7 @@ from .views import (
     AssignDocumentPermissionsView,
     AuthTokenLoginView,
     AuthTokenLogoutView,
+    AuthUserViewSet,
     CreateUserView,
     DocumentPermissionListView,
     DocumentViewSet,
@@ -17,6 +18,7 @@ from .views import (
 
 
 router = DefaultRouter()
+router.register('auth-users', AuthUserViewSet, basename='auth-user')
 router.register('admin-profiles', AdminProfileViewSet, basename='admin-profile')
 router.register('user-profiles', UserProfileViewSet, basename='user-profile')
 router.register('groups', UserGroupViewSet, basename='group')
@@ -33,6 +35,5 @@ urlpatterns = [
     path('auth/create-user/<int:pk>/', CreateUserView.as_view(), name='auth-user-detail'),
     path('auth/document-permissions/', DocumentPermissionListView.as_view(), name='auth-document-permissions'),
     path('auth/assign-document-permissions/', AssignDocumentPermissionsView.as_view(), name='auth-assign-document-permissions'),
-    path('auth/assign-document-permissions/<int:user_id>/', AssignDocumentPermissionsView.as_view(), name='auth-assign-document-permissions-detail'),
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),
 ]
