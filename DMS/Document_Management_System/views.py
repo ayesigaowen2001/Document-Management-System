@@ -29,7 +29,6 @@
 # =============================================================================
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth import login as django_login, logout as django_logout
 from django.contrib.auth.models import Permission
 from django.db import transaction
 from django.db.models import Q
@@ -40,11 +39,13 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated, IsAdminUser, SAFE_METHODS
 from rest_framework.response import Response
-from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.serializers import AuthTokenSerializer
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.fields import empty
 from rest_framework.views import APIView
+
+from .models import SessionToken
+
 
 from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfile
 from .serializers import (
@@ -57,9 +58,10 @@ from .serializers import (
 	UserGroupSerializer,
 	UserProfileSerializer,
 	UserUpdateSerializer,
-	DocumentPermissionAssignmentSerializer
-
+	DocumentPermissionAssignmentSerializer,
+	UploadAndShareSerializer,
 )
+
 
 
 # ---------------------------------------------------------------------------
@@ -389,24 +391,78 @@ class DocumentViewSet(viewsets.ModelViewSet):
 			status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
 		)
 
+	@action(detail=False, methods=['post'], url_path='upload-and-share')
+	@transaction.atomic
+	def upload_and_share(self, request):
+		"""
+		POST /documents/upload-and-share/
+		Upload a new document and optionally share it in a single request.
+
+		Accepts ``multipart/form-data`` with:
+		  - ``title``       – Document title (required)
+		  - ``file``        – The actual file (required)
+		  - ``email``       – Email of user to share with (optional; exclusive with group_name)
+		  - ``group_name``  – Name of group to share with (optional; exclusive with email)
+
+		Returns the created Document and, if shared, the resulting DocumentShare.
+		"""
+		user_profile = get_request_user_profile(request.user)
+		if user_profile is None:
+			return Response(
+				{'detail': 'A user profile is required to upload documents.'},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
+
+		serializer = UploadAndShareSerializer(data=request.data)
+		serializer.is_valid(raise_exception=True)
+		validated_data = serializer.validated_data
+		if not isinstance(validated_data, dict):
+			return Response({'detail': 'Invalid payload.'}, status=status.HTTP_400_BAD_REQUEST)
+
+		# Create the document
+		document = Document.objects.create(
+			title=validated_data.get('title', ''),
+			file=validated_data.get('file'),
+			uploaded_by=user_profile,
+		)
+
+		result = {
+			'document': DocumentSerializer(document).data,
+			'share': None,
+		}
+
+		# Optionally share immediately
+		shared_with_user = validated_data.get('shared_with_user')
+		shared_with_group = validated_data.get('shared_with_group')
+
+
+		if shared_with_user or shared_with_group:
+			share = DocumentShare.objects.create(
+				document=document,
+				shared_by=user_profile,
+				shared_with_user=shared_with_user,
+				shared_with_group=shared_with_group,
+			)
+			result['share'] = DocumentShareSerializer(share).data
+
+		return Response(result, status=status.HTTP_201_CREATED)
+
 
 # ---------------------------------------------------------------------------
+
 # Authentication views
 # ---------------------------------------------------------------------------
 
 class AuthTokenLoginView(ObtainAuthToken):
 	"""
 	POST /api/auth/login/
-	Login view that accepts username and password and returns an auth token
-	AND establishes a Django session for session-based authentication.
+	Login view that accepts username and password and returns an auth token.
 
 	Uses DRF's ObtainAuthToken under the hood but overrides `post` to return
-	a more structured response (token + session_id + user_id + username).
+	a more structured response (token + user_id + username).
 
-	Supports two authentication modes:
-	  1. Token-based:  Use "Authorization: Token <token>" in request headers.
-	  2. Session-based: Use the returned session cookie (CSRF token required
-		 for unsafe methods).
+	Supports token-based authentication:
+	  - Use "Authorization: Token <token>" in request headers.
 
 	Accessible without authentication (AllowAny).
 	"""
@@ -422,16 +478,13 @@ class AuthTokenLoginView(ObtainAuthToken):
 		if user is None:
 			return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
 
-		# --- Create / retrieve the DRF auth token (for token-based auth) ---
-		token, _ = Token.objects.get_or_create(user=user)
+		# --- Create a new session token (each login = new token) ---
+		token = SessionToken.objects.create(user=user)
 
-		# --- Establish a Django session (for session-based auth) ---
-		django_login(request, user)
 
 		return Response(
 			{
 				'token': token.key,
-				'session_id': request.session.session_key,
 				'user_id': user.pk,
 				'username': user.get_username(),
 			}
@@ -441,18 +494,20 @@ class AuthTokenLoginView(ObtainAuthToken):
 class AuthTokenLogoutView(APIView):
 	"""
 	POST /api/auth/logout/
-	Logout view that deletes the user's auth token and flushes the Django
-	session, effectively invalidating both token-based and session-based
-	authentication.
+	Logout view that deletes the user's auth token, effectively logging them out.
 
-	Works with both SessionAuthentication and TokenAuthentication.
+	Uses TokenAuthentication.
 	"""
 	permission_classes = [IsAuthenticated]
 
 	def post(self, request):
-		Token.objects.filter(user=request.user).delete()
-		django_logout(request)
+		# Delete only the current session's token (the one used in this request)
+		auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+		if auth_header.startswith('Token '):
+			key = auth_header[6:]
+			SessionToken.objects.filter(key=key).delete()
 		return Response({'detail': 'Logged out successfully.'}, status=status.HTTP_200_OK)
+
 
 
 # ---------------------------------------------------------------------------

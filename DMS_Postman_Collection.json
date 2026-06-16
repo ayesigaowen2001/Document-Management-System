@@ -1,0 +1,1151 @@
+{
+  "info": {
+    "name": "Document Management System API",
+    "description": "Complete API collection for the Document Management System. All endpoints are prefixed with http://localhost:8000/api/\n\n## Authentication\n\n**Session-based token authentication** – Each login creates a new session token. Send `Authorization: Token <token>` header.\n\nThe login response returns a `token` which is auto-saved for subsequent requests. Logout deletes the current session token (not all sessions).\n\nAll user-related fields (`uploaded_by`, `shared_by`, `shared_with_user`, `created_by`, `members`) return nested `{id, user: {id, username, email}}` details.\n\n## Variables\n\n| Variable      | Description                                 |\n|---------------|---------------------------------------------|\n| `base_url`    | Server URL (default http://localhost:8000)  |\n| `auth_token`  | Auth token – auto-set by Login script       |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('auth_token', jsonData.token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"your_username\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login", ""]
+            },
+            "description": "Login with username/password. Returns:\n- `token`       – Session token (for Token-based auth)\n- `user_id`     – User's primary key\n- `username`    – Username\n\nThe auth_token is auto-saved to the collection variable for subsequent requests.\n\nEach login creates a new session token; multiple simultaneous sessions are supported."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "logout", ""]
+            },
+            "description": "Logout – deletes only the current session token (the one used in the Authorization header), not all sessions."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Management",
+      "item": [
+        {
+          "name": "Get All Admins",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/admins/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "admins", ""]
+            }
+          }
+        },
+        {
+          "name": "Get Admin by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/admins/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "admins", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Create Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"new_admin\",\n  \"email\": \"admin@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/admins/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "admins", ""]
+            }
+          }
+        },
+        {
+          "name": "Update Admin (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"updated_admin\",\n  \"email\": \"updated@example.com\",\n  \"password\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/admins/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "admins", "1", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Management",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/users/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "users", ""]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/users/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "users", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"new_user\",\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/users/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "users", ""]
+            }
+          }
+        },
+        {
+          "name": "Update User (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"updated_user\",\n  \"email\": \"updated@example.com\",\n  \"password\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/users/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "users", "1", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth Users (auth_users CRUD)",
+      "item": [
+        {
+          "name": "List All Auth Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth-users/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth-users", ""]
+            }
+          }
+        },
+        {
+          "name": "Get Auth User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth-users/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth-users", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Create Auth User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"new_user\",\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"is_active\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth-users/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth-users", ""]
+            }
+          }
+        },
+        {
+          "name": "Update Auth User (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"updated_user\",\n  \"email\": \"updated@example.com\",\n  \"password\": \"newpassword123\",\n  \"first_name\": \"Jane\",\n  \"last_name\": \"Smith\",\n  \"is_active\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth-users/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth-users", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Partial Update Auth User (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"partially_updated\",\n  \"email\": \"partial@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth-users/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth-users", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Delete Auth User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth-users/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth-users", "1", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Profiles (ViewSet)",
+      "item": [
+        {
+          "name": "List Admin Profiles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin-profiles/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin-profiles", ""]
+            }
+          }
+        },
+        {
+          "name": "Create Admin Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin-profiles/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin-profiles", ""]
+            }
+          }
+        },
+        {
+          "name": "Get Admin Profile by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin-profiles", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Update Admin Profile (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin-profiles", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Partial Update Admin Profile (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin-profiles", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Delete Admin Profile",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin-profiles", "1", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Profiles (ViewSet)",
+      "item": [
+        {
+          "name": "List User Profiles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/user-profiles/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user-profiles", ""]
+            }
+          }
+        },
+        {
+          "name": "Create User Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/user-profiles/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user-profiles", ""]
+            }
+          }
+        },
+        {
+          "name": "Get User Profile by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/user-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user-profiles", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Update User Profile (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/user-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user-profiles", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Partial Update User Profile (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/user-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user-profiles", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Delete User Profile",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/user-profiles/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user-profiles", "1", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Groups",
+      "item": [
+        {
+          "name": "List All Groups",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", ""]
+            },
+            "description": "Returns all groups with nested member details. Each member includes `{id, user: {id, username, email}}`. `created_by` is `{id, username, email}`."
+          }
+        },
+        {
+          "name": "Create Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Developers\",\n  \"description\": \"Software development team\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/groups/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", ""]
+            }
+          }
+        },
+        {
+          "name": "Get Group by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Update Group (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Developers\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/groups/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Partial Update Group (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Partially updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/groups/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Delete Group",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Add Member to Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/groups/1/add-member/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "1", "add-member", ""]
+            },
+            "description": "Add a user to a group by email address (not by ID). The serializer resolves the email to a UserProfile internally."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "List All Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/documents/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", ""]
+            },
+            "description": "Returns documents with nested user details: `uploaded_by` = `{id, user: {id, username, email}}`, `group` = `{id, name}`."
+          }
+        },
+        {
+          "name": "Upload Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "My Document",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/documents/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", ""]
+            },
+            "description": "Upload a new document. Returns nested uploader details: `{id, user: {id, username, email}}`."
+          }
+        },
+        {
+          "name": "Upload and Share Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "My Document",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "email",
+                  "value": "recipient@example.com",
+                  "type": "text",
+                  "description": "Email of user to share with (optional; exclusive with group_name)"
+                },
+                {
+                  "key": "group_name",
+                  "value": "Developers",
+                  "type": "text",
+                  "description": "Name of group to share with (optional; exclusive with email)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/documents/upload-and-share/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "upload-and-share", ""]
+            },
+            "description": "Upload a new document and optionally share it in a single request. Accepts multipart/form-data.\n\n- `title` – Document title (required)\n- `file`  – The actual file (required)\n- `email` – Email of user to share with (optional, exclusive with group_name)\n- `group_name` – Name of group to share with (optional, exclusive with email)\n\nIf neither email nor group_name is provided, the document is uploaded but not shared.\n\nReturns:\n```json\n{\n  \"document\": {...},\n  \"share\": {...} | null\n}\n```"
+          }
+        },
+        {
+          "name": "Get Document by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/documents/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Update Document (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "Updated Document Title",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/documents/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Partial Update Document (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "Partially Updated Title",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/documents/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/documents/1/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "1", ""]
+            }
+          }
+        },
+        {
+          "name": "Share Document with User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"recipient@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/documents/1/share/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "1", "share", ""]
+            },
+            "description": "Share an existing document with a user by email address. Response includes nested user details: `shared_by`, `shared_with_user` = `{id, user: {id, username, email}}`."
+          }
+        },
+        {
+          "name": "Share Document with Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"group_name\": \"Developers\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/documents/1/share/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "1", "share", ""]
+            },
+            "description": "Share an existing document with a group by name. Response includes `shared_with_group` with nested `{id, name, members: [{id, user: {id, username, email}}]}`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Document Permissions",
+      "item": [
+        {
+          "name": "List All Document Permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/document-permissions/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "document-permissions", ""]
+            }
+          }
+        },
+        {
+          "name": "Get User's Assigned Permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/assign-document-permissions/?email=user@example.com",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "assign-document-permissions", ""],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "user@example.com"
+                }
+              ]
+            },
+            "description": "Get document permissions for a specific user, identified by email (query parameter)."
+          }
+        },
+        {
+          "name": "Assign Permissions to User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"permissions\": [\n    \"view_document\",\n    \"add_document\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/assign-document-permissions/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "assign-document-permissions", ""]
+            },
+            "description": "Assign document permissions to a user identified by email (not by ID). Overwrites any existing document permissions."
+          }
+        },
+        {
+          "name": "Update User's Permissions (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"permissions\": [\n    \"view_document\",\n    \"add_document\",\n    \"change_document\",\n    \"delete_document\",\n    \"share_document\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/assign-document-permissions/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "assign-document-permissions", ""]
+            },
+            "description": "Update (overwrite) document permissions for a user identified by email. The email and permissions are sent in the request body."
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

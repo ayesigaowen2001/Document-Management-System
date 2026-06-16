@@ -90,8 +90,25 @@ class AuthUserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class UserBriefSerializer(serializers.ModelSerializer):
+    """
+    Compact serializer for the built-in User model.
+    Returns a subset of fields (id, username, email).
+    """
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email']
+
+
 class AdminProfileSerializer(serializers.ModelSerializer):
-    """Serializer for the AdminProfile model (admin users)."""
+    """
+    Serializer for the AdminProfile model (admin users).
+
+    The ``user`` field is a nested representation containing
+    ``id``, ``username``, and ``email`` of the related auth.User.
+    """
+    user = UserBriefSerializer(read_only=True)
+
     class Meta:
         model = AdminProfile
         fields = ['id', 'user', 'created_at']
@@ -99,30 +116,175 @@ class AdminProfileSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    """Serializer for the UserProfile model (regular users)."""
+    """
+    Serializer for the UserProfile model (regular users).
+
+    The ``user`` and ``created_by`` fields are nested representations
+    containing ``id``, ``username``, and ``email`` of the related auth.User
+    (or admin's auth.User for ``created_by``).
+    """
+    user = UserBriefSerializer(read_only=True)
+    created_by = serializers.SerializerMethodField()
+
     class Meta:
         model = UserProfile
         fields = ['id', 'user', 'created_by', 'created_at']
         read_only_fields = ['id', 'created_at']
 
+    def get_created_by(self, obj):
+        """Return a brief representation of the admin who created this user."""
+        if obj.created_by is None:
+            return None
+        return {
+            'id': obj.created_by.pk,
+            'username': obj.created_by.user.username,
+            'email': obj.created_by.user.email,
+        }
+
+
+
+class GroupMemberSerializer(serializers.ModelSerializer):
+    """
+    Compact serializer for UserProfile when shown inside a group.
+    Returns nested user details (id, username, email) instead of just a PK.
+    """
+    user = UserBriefSerializer(read_only=True)
+
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'user']
+
 
 class UserGroupSerializer(serializers.ModelSerializer):
-    """Serializer for the UserGroup model (groups of regular users)."""
+    """
+    Serializer for the UserGroup model (groups of regular users).
+
+    ``members`` is a nested list containing each member's ``id`` and
+    nested ``user`` details (``id``, ``username``, ``email``).
+    ``created_by`` is a nested object with the admin's ``id``, ``username``,
+    and ``email``.
+    """
+    members = GroupMemberSerializer(many=True, read_only=True)
+    created_by = serializers.SerializerMethodField()
+
     class Meta:
         model = UserGroup
         fields = ['id', 'name', 'description', 'created_by', 'members', 'created_at']
         read_only_fields = ['id', 'created_at']
 
+    def get_created_by(self, obj):
+        """Return a brief representation of the admin who created this group."""
+        if obj.created_by is None:
+            return None
+        return {
+            'id': obj.created_by.pk,
+            'username': obj.created_by.user.username,
+            'email': obj.created_by.user.email,
+        }
+
+
+class DocumentUploadedBySerializer(serializers.ModelSerializer):
+    """
+    Compact serializer for the UserProfile used in document responses.
+    Returns nested user details (id, username, email) instead of just a PK.
+    """
+    user = UserBriefSerializer(read_only=True)
+
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'user']
+
+
+class DocumentShareGroupSerializer(serializers.ModelSerializer):
+    """
+    Compact serializer for UserGroup when shown inside a document share.
+    Returns id, name, and nested member details (id, username, email).
+    """
+    members = GroupMemberSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = UserGroup
+        fields = ['id', 'name', 'members']
+
 
 class DocumentSerializer(serializers.ModelSerializer):
-    """Serializer for the Document model (uploaded files)."""
+    """
+    Serializer for the Document model (uploaded files).
+
+    ``uploaded_by`` is a nested representation containing the uploader's
+    ``id`` and nested ``user`` details (``id``, ``username``, ``email``).
+    ``group`` is a nested representation with ``id`` and ``name``.
+    """
+    uploaded_by = DocumentUploadedBySerializer(read_only=True)
+    group = serializers.SerializerMethodField()
+
     class Meta:
         model = Document
         fields = ['id', 'title', 'file', 'uploaded_by', 'group', 'uploaded_at']
-        read_only_fields = ['id', 'uploaded_at', 'uploaded_by']
+        read_only_fields = ['id', 'uploaded_at']
+
+    def get_group(self, obj):
+        """Return a brief representation of the associated group, if any."""
+        if obj.group is None:
+            return None
+        return {
+            'id': obj.group.pk,
+            'name': obj.group.name,
+        }
+
+
+class UploadAndShareSerializer(serializers.Serializer):
+    """
+    Validates the payload for uploading a new document and immediately
+    sharing it with a user or group in a single request.
+
+    Accepts multipart/form-data with:
+      - ``title``       – Document title (required)
+      - ``file``        – The actual file to upload (required)
+      - ``email``       – Email of user to share with (optional; exclusive with group_name)
+      - ``group_name``  – Name of group to share with (optional; exclusive with email)
+
+    Exactly one of ``email`` or ``group_name`` must be provided, or neither
+    (in which case the document is uploaded but not shared).
+    """
+    title = serializers.CharField(max_length=255)
+    file = serializers.FileField()
+    email = serializers.EmailField(required=False)
+    group_name = serializers.CharField(required=False)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        group_name = attrs.get('group_name')
+
+        if email and group_name:
+            raise serializers.ValidationError(
+                'Provide either email or group_name, not both.'
+            )
+
+        if email:
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise serializers.ValidationError(f"No user found with email '{email}'.")
+            user_profile = getattr(user, 'user_profile', None)
+            if user_profile is None:
+                raise serializers.ValidationError(
+                    f"User with email '{email}' does not have a user profile."
+                )
+            attrs['shared_with_user'] = user_profile
+
+        if group_name:
+            try:
+                group = UserGroup.objects.get(name=group_name)
+            except UserGroup.DoesNotExist:
+                raise serializers.ValidationError(f"No group found with name '{group_name}'.")
+            attrs['shared_with_group'] = group
+
+        return attrs
 
 
 class DocumentShareSerializer(serializers.ModelSerializer):
+
     """
     Serializer for the DocumentShare model.
 
@@ -135,11 +297,17 @@ class DocumentShareSerializer(serializers.ModelSerializer):
     instance internally, so callers never need to know database primary keys.
 
     **Output** (read-only):
-      Returns the standard DocumentShare representation including the
-      ``shared_with_user`` (pk) and ``shared_with_group`` (pk) fields.
+      ``shared_by`` is a nested representation of the sharer's details
+      (``id``, ``user`` → ``id``, ``username``, ``email``).
+      ``shared_with_user`` follows the same pattern when set.
+      ``shared_with_group`` includes nested member details (id, username, email).
     """
+    
     email = serializers.EmailField(write_only=True, required=False)
     group_name = serializers.CharField(write_only=True, required=False)
+    shared_by = DocumentUploadedBySerializer(read_only=True)
+    shared_with_user = DocumentUploadedBySerializer(read_only=True)
+    shared_with_group = DocumentShareGroupSerializer(read_only=True)
 
     class Meta:
         model = DocumentShare
@@ -155,15 +323,18 @@ class DocumentShareSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'document', 'shared_by', 'shared_with_user', 'shared_with_group', 'created_at']
 
-    def validate(self, attrs):
-        """
-        Ensure exactly one of ``email`` or ``group_name`` is provided,
-        then resolve it to the appropriate model instance.
 
-        On success, the validated data will contain either a
-        ``shared_with_user`` (UserProfile) or ``shared_with_group`` (UserGroup)
-        key so that callers can directly use it with ``get_or_create``.
-        """
+    def validate(self, attrs):
+        
+        # Ensure exactly one of ``email`` or ``group_name`` is provided,
+        # then resolve it to the appropriate model instance.
+
+        # On success, the validated data will contain either a
+        # ``shared_with_user`` (UserProfile) or ``shared_with_group`` (UserGroup)
+        # key so that callers can directly use it with ``get_or_create``.
+    
+
+
         email = attrs.pop('email', None)
         group_name = attrs.pop('group_name', None)
 

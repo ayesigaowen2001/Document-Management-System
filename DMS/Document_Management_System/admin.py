@@ -9,7 +9,7 @@
 
 from django.contrib import admin
 
-from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfile
+from .models import AdminProfile, Document, DocumentShare, SessionToken, UserGroup, UserProfile
 
 
 @admin.register(AdminProfile)
@@ -85,3 +85,28 @@ class DocumentShareAdmin(admin.ModelAdmin):
     )
     search_fields = ('document__title', 'shared_by__user__username')
     list_filter = ('created_at',)
+
+
+@admin.register(SessionToken)
+class SessionTokenAdmin(admin.ModelAdmin):
+    """
+    Admin configuration for the SessionToken model.
+
+    List display columns: id, user, key (truncated), created_at, expires_at
+    Searchable by:       username (via the related User)
+    Filterable by:       created_at, expires_at
+    """
+    list_display = ('id', 'user', 'short_key', 'created_at', 'expires_at', 'is_expired')
+    search_fields = ('user__username', 'user__email')
+    list_filter = ('created_at', 'expires_at')
+    readonly_fields = ('key', 'created_at')
+
+    @admin.display(description='Token Key')
+    def short_key(self, obj):
+        return f'{obj.key[:12]}...' if obj.key else '-'
+
+    @admin.display(description='Expired?', boolean=True)
+    def is_expired(self, obj):
+        return obj.is_expired
+
+

@@ -4,11 +4,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
-from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.test import APITestCase, APIClient
 
-from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfile
+from .models import AdminProfile, Document, DocumentShare, SessionToken, UserGroup, UserProfile
 
 
 User = get_user_model()
@@ -25,7 +24,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 			is_staff=True,
 		)
 		self.admin_profile = AdminProfile.objects.create(user=self.admin_user)
-		self.admin_token = Token.objects.create(user=self.admin_user)
+		self.admin_token = SessionToken.objects.create(user=self.admin_user)
 
 		self.regular_user = User.objects.create_user(
 			username='regularuser',
@@ -40,7 +39,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 			password='strongpass123',
 		)
 		self.recipient_profile = UserProfile.objects.create(user=self.recipient_user, created_by=self.admin_profile)
-		self.recipient_token = Token.objects.create(user=self.recipient_user)
+		self.recipient_token = SessionToken.objects.create(user=self.recipient_user)
 
 		self.group = UserGroup.objects.create(name='Team A', created_by=self.admin_profile)
 		self.group.members.add(self.recipient_profile)
@@ -101,7 +100,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		share_permission = Permission.objects.get(codename='share_document', content_type__model='document')
 		self.regular_user.user_permissions.add(view_permission, share_permission)
 		self.recipient_user.user_permissions.add(view_permission)
-		regular_token = Token.objects.create(user=self.regular_user)
+		regular_token = SessionToken.objects.create(user=self.regular_user)
 
 		document = Document.objects.create(
 			title='Policy',
