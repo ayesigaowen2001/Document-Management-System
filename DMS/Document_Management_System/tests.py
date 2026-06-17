@@ -7,7 +7,9 @@ from django.urls import reverse
 from rest_framework.response import Response
 from rest_framework.test import APITestCase, APIClient
 
-from .models import AdminProfile, Document, DocumentShare, SessionToken, UserGroup, UserProfile
+from knox.models import AuthToken
+
+from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfile
 
 
 User = get_user_model()
@@ -24,7 +26,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 			is_staff=True,
 		)
 		self.admin_profile = AdminProfile.objects.create(user=self.admin_user)
-		self.admin_token = SessionToken.objects.create(user=self.admin_user)
+		_, self.admin_token = AuthToken.objects.create(user=self.admin_user)  # type: ignore[misc]
 
 		self.regular_user = User.objects.create_user(
 			username='regularuser',
@@ -39,13 +41,13 @@ class DocumentPermissionAndSharingTests(APITestCase):
 			password='strongpass123',
 		)
 		self.recipient_profile = UserProfile.objects.create(user=self.recipient_user, created_by=self.admin_profile)
-		self.recipient_token = SessionToken.objects.create(user=self.recipient_user)
+		_, self.recipient_token = AuthToken.objects.create(user=self.recipient_user)  # type: ignore[misc]
 
 		self.group = UserGroup.objects.create(name='Team A', created_by=self.admin_profile)
 		self.group.members.add(self.recipient_profile)
 
 	def test_admin_can_assign_document_permissions_to_user_by_email(self):
-		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token}')
 		response = cast(Response, self.api_client.post(
 			reverse('auth-assign-document-permissions'),
 			{
@@ -64,7 +66,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		self.assertEqual(assigned, {'view_document', 'add_document', 'share_document'})
 
 	def test_admin_can_assign_document_permissions_by_email_with_patch(self):
-		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token}')
 		response = cast(Response, self.api_client.patch(
 			reverse('auth-assign-document-permissions'),
 			{
@@ -83,7 +85,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		self.assertEqual(assigned, {'view_document', 'delete_document'})
 
 	def test_assign_permissions_fails_for_unknown_email(self):
-		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token}')
 		response = cast(Response, self.api_client.post(
 			reverse('auth-assign-document-permissions'),
 			{
@@ -100,7 +102,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		share_permission = Permission.objects.get(codename='share_document', content_type__model='document')
 		self.regular_user.user_permissions.add(view_permission, share_permission)
 		self.recipient_user.user_permissions.add(view_permission)
-		regular_token = SessionToken.objects.create(user=self.regular_user)
+		_, regular_token = AuthToken.objects.create(user=self.regular_user)  # type: ignore[misc]
 
 		document = Document.objects.create(
 			title='Policy',
@@ -108,7 +110,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 			uploaded_by=self.regular_profile,
 		)
 
-		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {regular_token.key}')
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {regular_token}')
 		share_response = cast(Response, self.api_client.post(
 			reverse('document-share', args=[document.pk]),
 			{'group_name': self.group.name},
@@ -117,7 +119,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		self.assertIn(share_response.status_code, {200, 201})
 		self.assertTrue(DocumentShare.objects.filter(document=document, shared_with_group=self.group).exists())
 
-		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.recipient_token.key}')
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.recipient_token}')
 		list_response = cast(Response, self.api_client.get(reverse('document-list')))
 		response_data = cast(list[dict[str, object]], list_response.data)
 		self.assertEqual(list_response.status_code, 200)
@@ -129,7 +131,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		view_permission = Permission.objects.get(codename='view_document', content_type__model='document')
 		self.regular_user.user_permissions.add(view_permission)
 
-		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token}')
 		response = cast(Response, self.api_client.get(
 			reverse('auth-assign-document-permissions'),
 			{'email': self.regular_user.email},
@@ -147,7 +149,7 @@ class DocumentPermissionAndSharingTests(APITestCase):
 		)
 		new_profile = UserProfile.objects.create(user=new_user, created_by=self.admin_profile)
 
-		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+		self.api_client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token}')
 		response = cast(Response, self.api_client.post(
 			reverse('group-add-member', args=[self.group.pk]),
 			{'email': 'newmember@example.com'},

@@ -9,17 +9,12 @@
 # - UserGroup     – A group of UserProfiles, created and managed by admins.
 # - Document      – An uploaded file owned by a UserProfile.
 # - DocumentShare – Tracks sharing of documents with users or groups.
-# - SessionToken  – Session-based auth token (one per login, multi-session support)
 #
 # Relationships:
 #   AdminProfile (1:1) User  ── creates ──→ UserGroup, UserProfile
 #   UserProfile  (1:1) User  ── uploads ──→ Document
 #   DocumentShare ──→ Document + UserProfile|UserGroup
-#   SessionToken (M:1) User  ── one token per session
 # =============================================================================
-
-import secrets
-from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -261,61 +256,5 @@ class DocumentShare(models.Model):
 		return f'{self.document} -> {target}'
 
 
-class SessionToken(models.Model):
-	"""
-	A session-based token tied to a specific user session.
-
-	Each time a user logs in, a new SessionToken is created.  Multiple
-	simultaneous sessions are supported (each has its own token).
-
-	Fields
-	------
-	user       : ForeignKey → User (multiple tokens per user allowed)
-	key        : CharField (unique, 40-char hex, auto-generated)
-	created_at : DateTimeField (auto-set on creation)
-	expires_at : DateTimeField (nullable; set if SESSION_TOKEN_EXPIRE_HOURS defined)
-	"""
-	user = models.ForeignKey(
-		settings.AUTH_USER_MODEL,
-		on_delete=models.CASCADE,
-		related_name='session_tokens',
-	)
-	key = models.CharField(
-		max_length=40,
-		unique=True,
-		editable=False,
-	)
-	created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-	expires_at = models.DateTimeField(null=True, blank=True)
-
-	class Meta:
-		db_table = 'session_tokens'
-		ordering = ['-created_at']
-
-	def __str__(self) -> str:
-		return f'{self.user} [{self.key[:12]}...]'
-
-	def save(self, *args, **kwargs):
-		"""Auto-generate key and set expires_at based on settings when first created."""
-		if self._state.adding:
-			if not self.key:
-				self.key = secrets.token_hex(20)
-			if self.expires_at is None:
-				hours = getattr(settings, 'SESSION_TOKEN_EXPIRE_HOURS', None)
-				if hours is not None:
-					self.expires_at = timezone.now() + timedelta(hours=int(hours))
-		super().save(*args, **kwargs)
-
-	@property
-	def is_expired(self) -> bool:
-		"""Check whether this token has expired."""
-		if self.expires_at is None:
-			return False
-		return timezone.now() >= self.expires_at
-
-	@classmethod
-	def clean_expired(cls):
-		"""Delete all expired tokens.  Call periodically from a cron / celery task."""
-		cls.objects.filter(expires_at__isnull=False, expires_at__lte=timezone.now()).delete()
 
 

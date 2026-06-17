@@ -10,9 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 import os
 from pathlib import Path
-
+from rest_framework.settings import api_settings
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -57,8 +58,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'rest_framework.authtoken',
+    #'rest_framework.authtoken',
     'DMS.Document_Management_System',
+    'knox',
 
 ]
 
@@ -111,7 +113,7 @@ DATABASES = {
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "DMS.Document_Management_System.authentication.SessionTokenAuthentication",
+        'knox.auth.TokenAuthentication',
     ],
     # Use Django's standard `django.contrib.auth` permissions,
     # or allow read-only access for unauthenticated users.
@@ -120,7 +122,19 @@ REST_FRAMEWORK = {
     ]
 }
 
-
+REST_KNOX = {
+  'SECURE_HASH_ALGORITHM': 'hashlib.sha512',
+  'AUTH_TOKEN_CHARACTER_LENGTH': 64,
+  'TOKEN_TTL': timedelta(hours=10),
+  'USER_SERIALIZER': 'knox.serializers.UserSerializer',
+  'TOKEN_LIMIT_PER_USER': None,
+  'AUTO_REFRESH': False,
+  'AUTO_REFRESH_MAX_TTL': None,
+  'MIN_REFRESH_INTERVAL': 60,
+  'AUTH_HEADER_PREFIX': 'Token',
+  'EXPIRY_DATETIME_FORMAT': api_settings.DATETIME_FORMAT,
+  'TOKEN_MODEL': 'knox.AuthToken',
+}
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
@@ -156,3 +170,4 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+

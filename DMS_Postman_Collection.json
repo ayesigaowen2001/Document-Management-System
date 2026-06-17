@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Document Management System API",
-    "description": "Complete API collection for the Document Management System. All endpoints are prefixed with http://localhost:8000/api/\n\n## Authentication\n\n**Session-based token authentication** – Each login creates a new session token. Send `Authorization: Token <token>` header.\n\nThe login response returns a `token` which is auto-saved for subsequent requests. Logout deletes the current session token (not all sessions).\n\nAll user-related fields (`uploaded_by`, `shared_by`, `shared_with_user`, `created_by`, `members`) return nested `{id, user: {id, username, email}}` details.\n\n## Variables\n\n| Variable      | Description                                 |\n|---------------|---------------------------------------------|\n| `base_url`    | Server URL (default http://localhost:8000)  |\n| `auth_token`  | Auth token – auto-set by Login script       |",
+    "description": "Complete API collection for the Document Management System. All endpoints are prefixed with http://localhost:8000/api/\n\n## Authentication\n\n**Knox token authentication** – Each login creates a new Knox auth token. Send `Authorization: Token <token>` header.\n\nThe login response returns a `token` (auto-saved for subsequent requests), `expiry` (ISO datetime when token expires), and `user` object. Logout deletes the current token; Logout All deletes all tokens for the user.\n\nAll user-related fields (`uploaded_by`, `shared_by`, `shared_with_user`, `created_by`, `members`) return nested `{id, user: {id, username, email}}` details.\n\n## Variables\n\n| Variable      | Description                                 |\n|---------------|---------------------------------------------|\n| `base_url`    | Server URL (default http://localhost:8000)  |\n| `auth_token`  | Auth token – auto-set by Login script       |",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -39,7 +39,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "auth", "login", ""]
             },
-            "description": "Login with username/password. Returns:\n- `token`       – Session token (for Token-based auth)\n- `user_id`     – User's primary key\n- `username`    – Username\n\nThe auth_token is auto-saved to the collection variable for subsequent requests.\n\nEach login creates a new session token; multiple simultaneous sessions are supported."
+            "description": "Login with username/password. Returns:\n- `token`       – Knox auth token (auto-saved to auth_token variable)\n- `expiry`      – ISO datetime when the token expires\n- `user`        – Object with `id` and `username`\n\nThe auth_token is auto-saved to the collection variable for subsequent requests.\n\nEach login creates a new Knox AuthToken; multiple simultaneous sessions are supported."
           }
         },
         {
@@ -57,7 +57,25 @@
               "host": ["{{base_url}}"],
               "path": ["api", "auth", "logout", ""]
             },
-            "description": "Logout – deletes only the current session token (the one used in the Authorization header), not all sessions."
+            "description": "Logout – deletes only the current Knox token (the one used in the Authorization header), not all sessions."
+          }
+        },
+        {
+          "name": "Logout All",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout-all/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "logout-all", ""]
+            },
+            "description": "Logout from all sessions – deletes every Knox auth token for the current user."
           }
         }
       ]

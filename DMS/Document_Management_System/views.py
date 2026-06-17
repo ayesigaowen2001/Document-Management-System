@@ -39,13 +39,11 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated, IsAdminUser, SAFE_METHODS
 from rest_framework.response import Response
-from rest_framework.authtoken.serializers import AuthTokenSerializer
-from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.fields import empty
 from rest_framework.views import APIView
 
-from .models import SessionToken
-
+from knox.auth import TokenAuthentication as KnoxTokenAuthentication
+from knox.models import AuthToken
 
 from .models import AdminProfile, Document, DocumentShare, UserGroup, UserProfile
 from .serializers import (
@@ -449,44 +447,53 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
 
 # ---------------------------------------------------------------------------
-
-# Authentication views
+# Authentication views (Knox)
 # ---------------------------------------------------------------------------
 
-class AuthTokenLoginView(ObtainAuthToken):
+class AuthTokenLoginView(APIView):
 	"""
 	POST /api/auth/login/
-	Login view that accepts username and password and returns an auth token.
+	Login view that accepts username and password and returns a Knox auth token.
 
-	Uses DRF's ObtainAuthToken under the hood but overrides `post` to return
-	a more structured response (token + user_id + username).
-
-	Supports token-based authentication:
-	  - Use "Authorization: Token <token>" in request headers.
+	Response includes:
+	  - token (the Knox token string)
+	  - expiry (ISO datetime when the token expires)
+	  - user (nested id + username)
 
 	Accessible without authentication (AllowAny).
 	"""
 	permission_classes = [AllowAny]
 
 	def post(self, request, *args, **kwargs):
-		serializer = AuthTokenSerializer(data=request.data, context={'request': request})
-		serializer.is_valid(raise_exception=True)
-		validated_data = serializer.validated_data
-		if validated_data in (None, empty) or not isinstance(validated_data, dict):
-			return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
-		user = validated_data.get('user')
+		from django.contrib.auth import authenticate
+
+		username = request.data.get('username')
+		password = request.data.get('password')
+
+		if not username or not password:
+			return Response(
+				{'detail': 'Username and password are required.'},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
+
+		user = authenticate(request=request, username=username, password=password)
 		if user is None:
-			return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
+			return Response(
+				{'detail': 'Invalid credentials.'},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
 
-		# --- Create a new session token (each login = new token) ---
-		token = SessionToken.objects.create(user=user)
-
+		# Create a Knox AuthToken
+		instance, token = AuthToken.objects.create(user=user)  # type: ignore[misc]
 
 		return Response(
 			{
-				'token': token.key,
-				'user_id': user.pk,
-				'username': user.get_username(),
+				'token': token,
+				'expiry': instance.expiry,
+				'user': {
+					'id': user.pk,
+					'username': user.get_username(),
+				},
 			}
 		)
 
@@ -494,19 +501,32 @@ class AuthTokenLoginView(ObtainAuthToken):
 class AuthTokenLogoutView(APIView):
 	"""
 	POST /api/auth/logout/
-	Logout view that deletes the user's auth token, effectively logging them out.
+	Logout view that deletes the current request's Knox auth token,
+	effectively logging the user out of this session.
 
-	Uses TokenAuthentication.
+	Requires authentication via Knox TokenAuthentication.
 	"""
+	authentication_classes = [KnoxTokenAuthentication]
 	permission_classes = [IsAuthenticated]
 
 	def post(self, request):
-		# Delete only the current session's token (the one used in this request)
-		auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-		if auth_header.startswith('Token '):
-			key = auth_header[6:]
-			SessionToken.objects.filter(key=key).delete()
+		request._auth.delete()
 		return Response({'detail': 'Logged out successfully.'}, status=status.HTTP_200_OK)
+
+
+class AuthTokenLogoutAllView(APIView):
+	"""
+	POST /api/auth/logout-all/
+	Logout from all sessions — deletes every Knox auth token for the user.
+
+	Requires authentication via Knox TokenAuthentication.
+	"""
+	authentication_classes = [KnoxTokenAuthentication]
+	permission_classes = [IsAuthenticated]
+
+	def post(self, request):
+		request.user.auth_token_set.all().delete()
+		return Response({'detail': 'Logged out of all sessions successfully.'}, status=status.HTTP_200_OK)
 
 
 
@@ -649,19 +669,19 @@ class SuperuserCreateAdminView(APIView):
 
 
 class CreateUserView(APIView):
-	"""
-	Admin/Superuser view for managing regular User accounts.
+	
+	# Admin/Superuser view for managing regular User accounts.
 
-	Available endpoints:
-	  - GET    /api/users/          → list all user profiles
-	  - GET    /api/users/{pk}/     → retrieve a single user profile
-	  - POST   /api/users/          → create a new regular user
-	  - PATCH  /api/users/{pk}/     → update username / email / password
+	# Available endpoints:
+	#   - GET    /api/users/          → list all user profiles
+	#   - GET    /api/users/{pk}/     → retrieve a single user profile
+	#   - POST   /api/users/          → create a new regular user
+	#   - PATCH  /api/users/{pk}/     → update username / email / password
 
-	All operations are restricted to superusers and admin-profile holders.
-	When creating a user, the view creates both a Django User and a UserProfile,
-	optionally recording the admin who created it.
-	"""
+	# All operations are restricted to superusers and admin-profile holders.
+	# When creating a user, the view creates both a Django User and a UserProfile,
+	# optionally recording the admin who created it.
+	
 	permission_classes = [IsAuthenticated]
 
 	def get(self, request, pk=None):
@@ -686,12 +706,12 @@ class CreateUserView(APIView):
 
 	@transaction.atomic
 	def patch(self, request, pk=None):
-		"""
-		PATCH /api/users/{pk}/
-		Partially update a regular user's User record (username, email, password).
-		Each field is optional; only supplied fields are updated.
-		Password is hashed via set_password().
-		"""
+		
+		# PATCH /api/users/{pk}/
+		# Partially update a regular user's User record (username, email, password).
+		# Each field is optional; only supplied fields are updated.
+		# Password is hashed via set_password().
+		
 		if not (request.user.is_superuser or hasattr(request.user, 'admin_profile')):
 			return Response(
 				{'detail': 'Only superusers and admins can update users.'},
