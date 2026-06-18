@@ -1,0 +1,32 @@
+name: Build and Push to Docker Hub
+
+# 1. Trigger this workflow whenever code is pushed to the main branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest # Run on GitHub's hosted Linux server
+    steps:
+      # Step A: Download your source code repository onto the cloud builder
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step B: Log into your personal Docker Hub account securely
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Step C: Compile the Dockerfile and push the finished image to Docker Hub
+      - name: Build and Push Django Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          # Note: Replace 'document-manager' below with whatever you want your image named
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/document-manager:latest
