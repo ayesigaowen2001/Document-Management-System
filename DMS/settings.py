@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from datetime import timedelta
 import os
 from pathlib import Path
+import dj_database_url
 from rest_framework.settings import api_settings
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -100,9 +101,16 @@ WSGI_APPLICATION = 'DMS.wsgi.application'
 DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.postgresql')
 
 
-DATABASES = {
+# Check if Render injected a live production DATABASE_URL string
+if os.getenv('DATABASE_URL'):
+    DATABASES = {
+        'default': dj_database_url.config(conn_max_age=600)
+    }
+else:
+    # Fallback cleanly to your existing local setting dictionary on your Windows machine
+    DATABASES = {
         'default': {
-            'ENGINE': DB_ENGINE,
+            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
             'NAME': os.getenv('DB_NAME', 'DMS_db'),
             'USER': os.getenv('DB_USER', 'postgres'),
             'PASSWORD': os.getenv('DB_PASSWORD', ''),
@@ -110,6 +118,7 @@ DATABASES = {
             'PORT': os.getenv('DB_PORT', '5432'),
         }
     }
+
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -176,5 +185,5 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = BASE_DIR / 'staticfiles'
 

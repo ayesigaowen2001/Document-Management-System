@@ -1,23 +1,36 @@
 services:
-  # 1. The Redis Service
+  # 1. Your Redis Service
   - type: redis
     name: document-manager-redis
     plan: free
-    ipAllowList: [] # Secures it so only your Django app can talk to it
+    ipAllowList: []
 
-  # 2. Your Django Application Web Service
+  # 2. NEW: Your Production PostgreSQL Database
+  - type: database
+    name: document-manager-db
+    plan: free
+    databaseName: doc_manager_prod
+    user: doc_admin
+
+  # 3. Your Django Application Web Service
   - type: web
     name: document-manager-web
     plan: free
     runtime: image
-    # Note: Replace 'your_dockerhub_username' with your actual username
     image:
-      url: ayesiga2025/document-manager:latest
+      url: your_dockerhub_username/document-manager:latest
     envVars:
       - key: DEBUG
         value: "False"
+      # Links the dynamic Redis string automatically
       - key: REDIS_URL
         fromService:
           type: redis
           name: document-manager-redis
+          property: connectionString
+      # NEW: Links the dynamic database connection string automatically
+      - key: DATABASE_URL
+        fromService:
+          type: database
+          name: document-manager-db
           property: connectionString
