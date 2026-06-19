@@ -1,0 +1,23 @@
+services:
+  # 1. The Redis Service
+  - type: redis
+    name: document-manager-redis
+    plan: free
+    ipAllowList: [] # Secures it so only your Django app can talk to it
+
+  # 2. Your Django Application Web Service
+  - type: web
+    name: document-manager-web
+    plan: free
+    runtime: image
+    # Note: Replace 'your_dockerhub_username' with your actual username
+    image:
+      url: ayesiga2025/document-manager:latest
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: document-manager-redis
+          property: connectionString
