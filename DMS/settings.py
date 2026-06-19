@@ -78,6 +78,33 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+# ==============================================================================
+# AUTOMATIC CLOUD SUPERUSER GENERATION
+# ==============================================================================
+if IS_RENDER:
+    from django.db.models.signals import post_migrate
+    from django.dispatch import receiver
+
+    @receiver(post_migrate)
+    def create_production_admin(sender, **kwargs):
+        # Prevent running this multiple times for different sub-apps
+        if sender.name == 'django.contrib.auth':
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            
+            # Choose your preferred credentials here
+            admin_username = 'admin'
+            admin_email = 'admin@example.com'
+            admin_password = 'admin@123'  # Change this to a secure password!
+
+            if not User.objects.filter(username=admin_username).exists():
+                print("Creating cloud infrastructure superuser account...")
+                User.objects.create_superuser(
+                    username=admin_username, 
+                    email=admin_email, 
+                    password=admin_password
+                )
+                print("Superuser created successfully.")
 
 ROOT_URLCONF = 'DMS.urls'
 
