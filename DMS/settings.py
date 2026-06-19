@@ -13,17 +13,17 @@ from rest_framework.settings import api_settings
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ==============================================================================
-# INTERACTIVE PRODUCTION PLATFORM SWITCH
+# SAFE DATABASE ROUTING (With Explicit Cloud/Local Fallbacks)
 # ==============================================================================
 IS_RENDER = 'RENDER' in os.environ or 'DATABASE_URL' in os.environ
 
-if IS_RENDER:
-    # 1. On Render, completely prioritize live cloud database variables
+if IS_RENDER and os.getenv('DATABASE_URL'):
+    # Prioritize live cloud configuration if Render has fully injected it
     DATABASES = {
         'default': dj_database_url.config(conn_max_age=600)
     }
 else:
-    # 2. On your local Windows machine, fallback to your .env parsing utility
+    # Safe fallback initialization structure for local PC development or initial build stages
     def load_dotenv(path):
         if not path.exists():
             return
@@ -36,7 +36,6 @@ else:
 
     load_dotenv(BASE_DIR / '.env')
 
-    # Fallback cleanly to your local development PostgreSQL schema on Windows
     DATABASES = {
         'default': {
             'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
@@ -54,7 +53,7 @@ else:
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-mjshl(^7w$1+38uc^kw*!_=+sxm_mq%d@z(=%*yqx5ygjfgt+i')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-# Dynamic host alignment to prevent HTTP host header attacks
+# Dynamic host validation alignment
 ALLOWED_HOSTS = [os.getenv('RENDER_EXTERNAL_HOSTNAME', '*')]
 
 # Application definition
@@ -99,9 +98,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'DMS.wsgi.application'
 
-# ==============================================================================
-# THIRD-PARTY INTEGRATION ROUTING
-# ==============================================================================
+# REST API Layer Configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         'knox.auth.TokenAuthentication',
@@ -132,7 +129,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# Cache Layer Configuration
+# Redis Cache Architecture
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
@@ -146,8 +143,6 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# ==============================================================================
-# STATIC STORAGE MANAGEMENT
-# ==============================================================================
+# Production Static Asset Configuration
 STATIC_URL = '/static/'
 STATIC_ROOT = str(BASE_DIR / 'staticfiles')
