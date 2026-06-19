@@ -29,4 +29,4 @@ COPY . /app/
 EXPOSE 8000
 
 # Step 9: Run migrations, collect static files, and start Gunicorn
-CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:8000 your_project_name.wsgi:application"]
+CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn --bind 0.0.0.0:8000 DMS.wsgi:application"]
