@@ -1,0 +1,43 @@
+# Git
+
+.git
+.gitignore
+
+# Python
+
+**pycache**/
+_.py[cod]
+_.pyo
+\*.pyd
+
+# Virtual environments
+
+env/
+.venv/
+
+# Local environment variables (don't bake local .env into production image)
+
+.env
+
+# IDE
+
+.idea/
+.vscode/
+
+# OS
+
+.DS_Store
+Thumbs.db
+
+# Docker
+
+Dockerfile
+.dockerignore
+
+# GitHub Actions
+
+.github/
+
+# Documentation
+
+README.md

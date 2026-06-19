@@ -17,6 +17,8 @@ services:
     name: document-manager-web
     plan: free
     runtime: image
+    # IMPORTANT: Replace with your actual Docker Hub username below
+    # e.g. url: ayesigaowen2001/document-manager:latest
     image:
       url: your_dockerhub_username/document-manager:latest
     envVars:
