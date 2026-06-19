@@ -41,10 +41,10 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-mjshl(^7w$1+38uc^kw*!_=+sxm_mq%d@z(=%*yqx5ygjfgt+i'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-mjshl(^7w$1+38uc^kw*!_=+sxm_mq%d@z(=%*yqx5ygjfgt+i')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
@@ -186,4 +186,6 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/staticfiles/'
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
